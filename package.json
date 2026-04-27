@@ -1,0 +1,34 @@
+{
+  "name": "@peakly/cli",
+  "version": "0.1.0",
+  "description": "CLI for the Peakly API",
+  "keywords": ["peakly", "cli", "invoicing"],
+  "license": "UNLICENSED",
+  "private": false,
+  "type": "module",
+  "bin": {
+    "peakly": "./dist/index.js"
+  },
+  "main": "./dist/index.js",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@peakly/sdk": "file:../peakly-sdk",
+    "commander": "^12.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsup": "^8.4.0",
+    "typescript": "^5.8.3"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
