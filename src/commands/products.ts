@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import { createClient } from "../client.js";
 import { die, formatApiError, isJsonMode, printResult, printTable } from "../output.js";
+import { numberOption, requiredNumber } from "./number-option.js";
 
 type ProductRow = {
   id?: number;
@@ -8,13 +9,6 @@ type ProductRow = {
   barcode?: string | null;
   unitPrice?: number | null;
 };
-
-function numberOption(value: string | undefined): number | undefined {
-  if (value === undefined) return undefined;
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) die(`Invalid number: ${value}`);
-  return parsed;
-}
 
 export function buildProductsCommand(): Command {
   const cmd = new Command("products").description("Manage products");
@@ -78,8 +72,9 @@ export function buildProductsCommand(): Command {
     .command("get <id>")
     .description("Get a product by ID")
     .action(async (id: string) => {
+      const productId = requiredNumber(id, "product id");
       const client = createClient();
-      const { data, error } = await client.sales.products.get(Number(id));
+      const { data, error } = await client.sales.products.get(productId);
       if (error) die(formatApiError(error));
       printResult(data);
     });
@@ -106,8 +101,10 @@ export function buildProductsCommand(): Command {
         quantity?: string;
         unitPrice?: string;
       }) => {
-        const unitOfMeasureId =
-          numberOption(opts.unitOfMeasureId) ?? die("Missing --unit-of-measure-id");
+        const unitOfMeasureId = requiredNumber(
+          opts.unitOfMeasureId,
+          "--unit-of-measure-id"
+        );
         const client = createClient();
         const { data, error } = await client.sales.products.create({
           description: opts.description,

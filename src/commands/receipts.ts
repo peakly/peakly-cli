@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import { createClient } from "../client.js";
 import { die, formatApiError, isJsonMode, printResult, printTable } from "../output.js";
+import { numberOption } from "./number-option.js";
 
 type ReceiptRow = {
   id?: string;
@@ -13,13 +14,6 @@ type ReceiptRow = {
     businessName?: string;
   } | null;
 };
-
-function numberOption(value: string | undefined): number | undefined {
-  if (value === undefined) return undefined;
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) die(`Invalid number: ${value}`);
-  return parsed;
-}
 
 export function buildReceiptsCommand(): Command {
   const cmd = new Command("receipts").description("Manage sales receipts");

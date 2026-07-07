@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import { createClient } from "../client.js";
 import { die, formatApiError, isJsonMode, printResult, printTable } from "../output.js";
+import { numberOption, requiredNumber } from "./number-option.js";
 
 type CustomerRow = {
   id?: number;
@@ -8,13 +9,6 @@ type CustomerRow = {
   taxId?: string | null;
   email?: string | null;
 };
-
-function numberOption(value: string | undefined): number | undefined {
-  if (value === undefined) return undefined;
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) die(`Invalid number: ${value}`);
-  return parsed;
-}
 
 export function buildCustomersCommand(): Command {
   const cmd = new Command("customers").description("Manage customers");
@@ -85,8 +79,9 @@ export function buildCustomersCommand(): Command {
     .command("get <id>")
     .description("Get a customer by ID")
     .action(async (id: string) => {
+      const customerId = requiredNumber(id, "customer id");
       const client = createClient();
-      const { data, error } = await client.sales.customers.get(Number(id));
+      const { data, error } = await client.sales.customers.get(customerId);
       if (error) die(formatApiError(error));
       printResult(data);
     });

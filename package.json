@@ -1,6 +1,6 @@
 {
   "name": "peakly-cli",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "CLI for the Peakly API",
   "keywords": [
     "peakly",
