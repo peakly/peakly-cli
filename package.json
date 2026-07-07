@@ -11,7 +11,8 @@
   "private": false,
   "type": "module",
   "bin": {
-    "peakly": "./dist/index.js"
+    "peakly": "dist/index.js",
+    "peakly-cli": "dist/index.js"
   },
   "main": "./dist/index.js",
   "files": [
