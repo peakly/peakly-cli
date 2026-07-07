@@ -7,6 +7,7 @@ export default defineConfig({
   outDir: "dist",
   clean: true,
   sourcemap: true,
+  external: ["peakly"],
   banner: {
     js: "#!/usr/bin/env node",
   },

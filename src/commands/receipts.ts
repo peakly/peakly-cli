@@ -1,21 +1,39 @@
 import { Command } from "commander";
 import { createClient } from "../client.js";
-import { isJsonMode, printResult, printTable, die } from "../output.js";
+import { die, formatApiError, isJsonMode, printResult, printTable } from "../output.js";
+
+type ReceiptRow = {
+  id?: string;
+  number?: string;
+  date?: string;
+  customerId?: number;
+  total?: number;
+  status?: string;
+  customer?: {
+    businessName?: string;
+  } | null;
+};
+
+function numberOption(value: string | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) die(`Invalid number: ${value}`);
+  return parsed;
+}
 
 export function buildReceiptsCommand(): Command {
-  const cmd = new Command("receipts").description(
-    "Manage sales receipts (invoices)"
-  );
+  const cmd = new Command("receipts").description("Manage sales receipts");
 
   cmd
     .command("list")
     .description("List sales receipts")
     .option("--page-size <n>", "Results per page", "20")
     .option("--cursor <cursor>", "Pagination cursor")
-    .option("--status <status>", "Filter by status (e.g. EMITIDO, BORRADOR)")
+    .option("--status <status>", "Filter by status")
     .option("--date-from <date>", "Filter from date (YYYY-MM-DD)")
     .option("--date-to <date>", "Filter to date (YYYY-MM-DD)")
-    .option("--search <q>", "Free-text search")
+    .option("--search <query>", "Search customer, receipt number, CAE, cuit:<value>, nro:<value>, id:<value>")
+    .option("--customer-id <id>", "Filter by customer id")
     .action(
       async (opts: {
         pageSize: string;
@@ -24,58 +42,34 @@ export function buildReceiptsCommand(): Command {
         dateFrom?: string;
         dateTo?: string;
         search?: string;
+        customerId?: string;
       }) => {
         const client = createClient();
-        const { data, error } = await client.GET("/v1/sales-receipts", {
-          params: {
-            query: {
-              page_size: Number(opts.pageSize),
-              ...(opts.cursor ? { cursor: opts.cursor } : {}),
-              ...(opts.status ? { status: opts.status as never } : {}),
-              ...(opts.dateFrom ? { date_from: opts.dateFrom } : {}),
-              ...(opts.dateTo ? { date_to: opts.dateTo } : {}),
-              ...(opts.search ? { search: opts.search } : {}),
-            },
-          },
+        const { data, error } = await client.sales.receipts.list({
+          page_size: numberOption(opts.pageSize),
+          cursor: opts.cursor,
+          status: opts.status,
+          date_from: opts.dateFrom,
+          date_to: opts.dateTo,
+          search: opts.search,
+          customer_id: numberOption(opts.customerId),
         });
-        if (error) die(JSON.stringify(error));
-        if (isJsonMode()) {
-          printResult(data);
-          return;
-        }
-        const body = data as unknown as {
-          data?: unknown[];
-          nextCursor?: string;
-        };
-        const items = body.data ?? [];
-        if (!items.length) {
-          console.log("No receipts found.");
-          return;
-        }
-        printTable(
-          ["ID", "Number", "Date", "Customer", "Total", "Status"],
-          items.map((r: unknown) => {
-            const receipt = r as {
-              id?: string;
-              number?: string;
-              date?: string;
-              customerName?: string;
-              total?: number;
-              status?: string;
-            };
-            return [
-              receipt.id,
-              receipt.number,
-              receipt.date,
-              receipt.customerName,
-              receipt.total,
-              receipt.status,
-            ];
-          })
-        );
-        if (body.nextCursor) {
-          console.log(`\nNext page: --cursor ${body.nextCursor}`);
-        }
+        if (error) die(formatApiError(error));
+        if (isJsonMode()) return printResult(data);
+
+        const items = (data?.data ?? []) as ReceiptRow[];
+        const rows =
+          items.map((receipt) => [
+            receipt.id,
+            receipt.number,
+            receipt.date?.slice(0, 10),
+            receipt.customer?.businessName ?? receipt.customerId,
+            receipt.total,
+            receipt.status,
+          ]) ?? [];
+
+        printTable(["ID", "Number", "Date", "Customer", "Total", "Status"], rows);
+        if (data?.nextCursor) console.log(`\nNext page: --cursor ${data.nextCursor}`);
       }
     );
 
@@ -84,32 +78,31 @@ export function buildReceiptsCommand(): Command {
     .description("Get a receipt by ID")
     .action(async (id: string) => {
       const client = createClient();
-      const { data, error } = await client.GET("/v1/sales-receipts/{id}", {
-        params: { path: { id } },
-      });
-      if (error) die(JSON.stringify(error));
+      const { data, error } = await client.sales.receipts.get(id);
+      if (error) die(formatApiError(error));
+      printResult(data);
+    });
+
+  cmd
+    .command("confirm <id>")
+    .description("Confirm a draft receipt")
+    .action(async (id: string) => {
+      const client = createClient();
+      const { data, error } = await client.sales.receipts.confirm(id);
+      if (error) die(formatApiError(error));
       printResult(data);
     });
 
   cmd
     .command("void <id>")
-    .description(
-      "Void a receipt (creates a compensating credit note by default)"
-    )
-    .option(
-      "--no-credit-note",
-      "Skip auto-creating a compensating credit note"
-    )
+    .description("Void a receipt")
+    .option("--no-credit-note", "Skip auto-creating a compensating credit note")
     .action(async (id: string, opts: { creditNote: boolean }) => {
       const client = createClient();
-      const { data, error } = await client.POST(
-        "/v1/sales-receipts/{id}/void",
-        {
-          params: { path: { id } },
-          body: { createCreditNote: opts.creditNote },
-        }
-      );
-      if (error) die(JSON.stringify(error));
+      const { data, error } = await client.sales.receipts.void(id, {
+        createCreditNote: opts.creditNote,
+      });
+      if (error) die(formatApiError(error));
       printResult(data);
     });
 

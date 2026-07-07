@@ -1,97 +1,126 @@
-# @peakly/cli
+# peakly-cli
 
-Command-line interface for the [Peakly](https://peakly.ar) API — manage customers, invoices, and products from your terminal.
+[![CI](https://github.com/peakly/peakly-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/peakly/peakly-cli/actions/workflows/ci.yml)
+[![Release](https://github.com/peakly/peakly-cli/actions/workflows/release.yml/badge.svg)](https://github.com/peakly/peakly-cli/actions/workflows/release.yml)
+[![npm version](https://img.shields.io/npm/v/peakly-cli.svg)](https://www.npmjs.com/package/peakly-cli)
 
-## Installation
+Command-line interface for the [Peakly API](https://api.peakly.ar), published as [`peakly-cli`](https://www.npmjs.com/package/peakly-cli) and exposing the `peakly` binary.
+
+The CLI uses the public [`peakly`](https://www.npmjs.com/package/peakly) TypeScript SDK for API calls and types. It does not copy OpenAPI types or send `X-Organization-Id`.
+
+## Install
 
 ```bash
-npm install -g @peakly/cli
-# or run without installing:
-npx @peakly/cli <command>
+npm install -g peakly-cli
+```
+
+Or run without installing:
+
+```bash
+npx peakly-cli --help
 ```
 
 ## Authentication
 
+Peakly API keys are scoped to a single organization. The CLI sends only `X-API-Key`.
+
 ```bash
-peakly auth --api-key pk_live_...
+export PEAKLY_API_KEY=pk_...
+peakly auth status
 ```
 
-Config is stored at `~/.peakly/config.json`. Override at runtime with:
+For one-off commands:
 
 ```bash
-PEAKLY_API_KEY=pk_live_... peakly whoami
-PEAKLY_API_URL=https://staging.api.peakly.ar/v1 peakly customers list
+peakly --api-key pk_... customers list
+```
+
+Optional:
+
+```bash
+export PEAKLY_API_URL=https://api.peakly.ar
 ```
 
 ## Commands
 
-### Auth
+### Auth and config
 
 ```bash
-peakly auth --api-key <key>           # Save credentials
-peakly auth --api-key <key> --org-id <id>   # Save with explicit org ID
-peakly whoami                         # Show stored config + verify connectivity
+peakly auth status
+peakly whoami
+peakly ping
+peakly config get
+peakly config doctor
 ```
 
 ### Customers
 
 ```bash
-peakly customers list                 # List all customers (paginated)
-peakly customers list --page-size 50  # Custom page size
-peakly customers list --cursor <c>    # Next page
-peakly customers search "Acme"        # Search by name or CUIT
-peakly customers get 123              # Get customer by ID
-```
-
-### Receipts
-
-```bash
-peakly receipts list                  # List receipts (paginated)
-peakly receipts list --status EMITIDO # Filter by status
-peakly receipts list --date-from 2025-01-01 --date-to 2025-12-31
-peakly receipts list --search "Acme"  # Free-text search
-peakly receipts get 456               # Get receipt by ID
-peakly receipts void 456              # Void + auto-create credit note
-peakly receipts void 456 --no-credit-note  # Void without credit note
+peakly customers list
+peakly customers list --search "Acme"
+peakly customers search "30700000000"
+peakly customers get 123
+peakly customers create --business-name "Acme SA" --tax-id 30700000000
 ```
 
 ### Products
 
 ```bash
-peakly products list                  # List all products
-peakly products list --name "Widget"  # Filter by name
-peakly products list --page-size 50   # Custom page size
+peakly products list
+peakly products list --name "Widget"
+peakly products search "Widget"
+peakly products get 123
+peakly products create --description "Widget A" --unit-of-measure-id 1 --unit-price 1000
 ```
 
-### JSON output
-
-All commands support `--json` for machine-readable output:
+### Sales receipts
 
 ```bash
-peakly --json customers list | jq '.[0].name'
-peakly --json receipts get 456 | jq '.total'
+peakly receipts list
+peakly receipts list --date-from 2026-07-01 --date-to 2026-07-31
+peakly receipts list --status Creada
+peakly receipts get 550e8400-e29b-41d4-a716-446655440000
+peakly receipts confirm 550e8400-e29b-41d4-a716-446655440000
+peakly receipts void 550e8400-e29b-41d4-a716-446655440000
+peakly receipts void 550e8400-e29b-41d4-a716-446655440000 --no-credit-note
+```
+
+### OpenAPI
+
+```bash
+peakly openapi pull > peakly-openapi.json
+```
+
+## JSON output
+
+All commands support `--json`:
+
+```bash
+peakly --json customers list | jq '.data[0]'
+peakly --json receipts get 550e8400-e29b-41d4-a716-446655440000 | jq '.total'
 ```
 
 ## Development
 
 ```bash
 npm install
-npm run build      # Compile TypeScript → dist/
-npm run typecheck  # Type-check only
-npm run dev        # Watch mode
+npm run typecheck
+npm test
+npm run build
+node dist/index.js --help
 ```
 
-### Regenerating SDK types
+## Release
 
-The CLI depends on `@peakly/sdk` which is auto-generated from the API OpenAPI spec. See [peakly/peakly-sdk](https://github.com/peakly/peakly-sdk) for regeneration instructions.
+Releases run from GitHub Actions with `semantic-release` and npm Trusted Publishing. Do not configure long-lived `NPM_TOKEN`/`NODE_AUTH_TOKEN` secrets for publishing.
 
-## Environment variables
+Configure npm Trusted Publisher for package `peakly-cli`:
 
-| Variable | Description |
-|---|---|
-| `PEAKLY_API_KEY` | API key — overrides `~/.peakly/config.json` |
-| `PEAKLY_API_URL` | Base URL — overrides config (default: `https://new.api.peakly.ar/v1`) |
+- repository: `peakly/peakly-cli`
+- workflow: `.github/workflows/release.yml`
+- environment: empty, unless a GitHub Environment is intentionally added later
+- allowed action: `npm publish`
 
 ## License
 
-UNLICENSED — proprietary.
+MIT

@@ -1,59 +1,79 @@
 import { Command } from "commander";
-import { readConfig, writeConfig, configFilePath } from "../config.js";
 import { createClient } from "../client.js";
-import { printResult, die } from "../output.js";
+import { maskSecret, resolveConfig } from "../config.js";
+import { die, formatApiError, printResult } from "../output.js";
+
+interface AuthStatus {
+  connected: boolean;
+  apiKey: string | null;
+  apiKeySource: string;
+  baseUrl: string;
+  baseUrlSource: string;
+  status?: number;
+  error?: string;
+}
+
+async function getAuthStatus() {
+  const config = resolveConfig();
+
+  if (!config.apiKey) {
+    return {
+      connected: false,
+      apiKey: null,
+      apiKeySource: "missing",
+      baseUrl: config.baseUrl,
+      baseUrlSource: config.baseUrlSource,
+      error: "Missing API key. Set PEAKLY_API_KEY or pass --api-key <key>.",
+    } satisfies AuthStatus;
+  }
+
+  const client = createClient();
+  const { error, response } = await client.sales.customers.list({
+    page_size: 1,
+  });
+
+  return {
+    connected: !error,
+    apiKey: maskSecret(config.apiKey),
+    apiKeySource: config.apiKeySource,
+    baseUrl: config.baseUrl,
+    baseUrlSource: config.baseUrlSource,
+    status: response.status,
+    ...(error ? { error: formatApiError(error) } : {}),
+  } satisfies AuthStatus;
+}
 
 export function buildAuthCommand(): Command {
-  const cmd = new Command("auth").description("Authenticate with the Peakly API");
+  const cmd = new Command("auth").description("Inspect Peakly API authentication");
 
   cmd
-    .requiredOption("--api-key <key>", "API key (pk_live_... or pk_test_...)")
-    .option("--org-id <id>", "Organization ID (optional — resolved from key if omitted)")
-    .option("--base-url <url>", "Override API base URL (or set PEAKLY_API_URL)")
-    .action(
-      async (opts: { apiKey: string; orgId?: string; baseUrl?: string }) => {
-        writeConfig({
-          apiKey: opts.apiKey,
-          ...(opts.orgId ? { orgId: opts.orgId } : {}),
-          ...(opts.baseUrl ? { baseUrl: opts.baseUrl } : {}),
-        });
-        console.log(`Credentials saved to ${configFilePath()}`);
-      }
-    );
+    .command("status")
+    .description("Verify the configured API key without printing it")
+    .action(async () => {
+      const status = await getAuthStatus();
+      printResult(status);
+      if (!status.connected) process.exit(1);
+    });
 
   return cmd;
 }
 
+export function buildPingCommand(): Command {
+  return new Command("ping")
+    .description("Check API connectivity")
+    .action(async () => {
+      const status = await getAuthStatus();
+      if (!status.connected) die(status.error ?? "Could not connect to Peakly API");
+      printResult({ ok: true, baseUrl: status.baseUrl, status: status.status });
+    });
+}
+
 export function buildWhoamiCommand(): Command {
   return new Command("whoami")
-    .description("Show current auth config and verify API connectivity")
+    .description("Alias for auth status")
     .action(async () => {
-      const config = readConfig();
-      const apiKey =
-        process.env.PEAKLY_API_KEY ?? config?.apiKey ?? die("not authenticated");
-
-      const masked =
-        apiKey.length > 8
-          ? apiKey.slice(0, 8) + "..." + apiKey.slice(-4)
-          : "****";
-
-      // Validate connectivity with a lightweight request
-      const client = createClient();
-      const { error } = await client.GET("/v1/customers", {
-        params: { query: { page_size: 1 } },
-      });
-
-      const connected = !error;
-
-      printResult({
-        apiKey: masked,
-        ...(config?.orgId ? { orgId: config.orgId } : {}),
-        baseUrl:
-          process.env.PEAKLY_API_URL ??
-          config?.baseUrl ??
-          "https://new.api.peakly.ar/v1",
-        connected,
-        ...(error ? { error: String(error) } : {}),
-      });
+      const status = await getAuthStatus();
+      printResult(status);
+      if (!status.connected) process.exit(1);
     });
 }

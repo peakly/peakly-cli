@@ -1,29 +1,55 @@
-import { readFileSync, writeFileSync, mkdirSync } from "fs";
-import { homedir } from "os";
-import { join } from "path";
+const DEFAULT_API_URL = "https://api.peakly.ar";
 
-const CONFIG_DIR = join(homedir(), ".peakly");
-const CONFIG_FILE = join(CONFIG_DIR, "config.json");
-
-export interface PeaklyConfig {
-  apiKey: string;
-  orgId?: string;
-  baseUrl?: string;
+export interface RuntimeOptions {
+  apiKey?: string;
+  apiUrl?: string;
+  debug?: boolean;
 }
 
-export function readConfig(): PeaklyConfig | null {
-  try {
-    return JSON.parse(readFileSync(CONFIG_FILE, "utf-8")) as PeaklyConfig;
-  } catch {
-    return null;
-  }
+export interface ResolvedConfig {
+  apiKey?: string;
+  apiKeySource: "flag" | "env" | "missing";
+  baseUrl: string;
+  baseUrlSource: "flag" | "env" | "default";
+  debug: boolean;
 }
 
-export function writeConfig(config: PeaklyConfig): void {
-  mkdirSync(CONFIG_DIR, { recursive: true });
-  writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2) + "\n", "utf-8");
+let runtimeOptions: RuntimeOptions = {};
+
+export function setRuntimeOptions(options: RuntimeOptions): void {
+  runtimeOptions = options;
 }
 
-export function configFilePath(): string {
-  return CONFIG_FILE;
+export function normalizeBaseUrl(value: string): string {
+  const trimmed = value.trim().replace(/\/+$/, "");
+  return trimmed.endsWith("/v1") ? trimmed.slice(0, -3) : trimmed;
+}
+
+export function resolveConfig(
+  env: NodeJS.ProcessEnv = process.env
+): ResolvedConfig {
+  const apiKey = runtimeOptions.apiKey || env.PEAKLY_API_KEY;
+  const apiUrl = runtimeOptions.apiUrl || env.PEAKLY_API_URL;
+
+  return {
+    apiKey,
+    apiKeySource: runtimeOptions.apiKey
+      ? "flag"
+      : env.PEAKLY_API_KEY
+        ? "env"
+        : "missing",
+    baseUrl: normalizeBaseUrl(apiUrl || DEFAULT_API_URL),
+    baseUrlSource: runtimeOptions.apiUrl
+      ? "flag"
+      : env.PEAKLY_API_URL
+        ? "env"
+        : "default",
+    debug: Boolean(runtimeOptions.debug),
+  };
+}
+
+export function maskSecret(value: string | undefined): string | null {
+  if (!value) return null;
+  if (value.length <= 8) return "****";
+  return `${value.slice(0, 5)}...${value.slice(-4)}`;
 }

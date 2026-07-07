@@ -1,6 +1,20 @@
 import { Command } from "commander";
 import { createClient } from "../client.js";
-import { isJsonMode, printResult, printTable, die } from "../output.js";
+import { die, formatApiError, isJsonMode, printResult, printTable } from "../output.js";
+
+type CustomerRow = {
+  id?: number;
+  businessName?: string;
+  taxId?: string | null;
+  email?: string | null;
+};
+
+function numberOption(value: string | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) die(`Invalid number: ${value}`);
+  return parsed;
+}
 
 export function buildCustomersCommand(): Command {
   const cmd = new Command("customers").description("Manage customers");
@@ -10,78 +24,61 @@ export function buildCustomersCommand(): Command {
     .description("List customers")
     .option("--page-size <n>", "Number of results per page", "20")
     .option("--cursor <cursor>", "Pagination cursor")
-    .action(async (opts: { pageSize: string; cursor?: string }) => {
-      const client = createClient();
-      const { data, error } = await client.GET("/v1/customers", {
-        params: {
-          query: {
-            page_size: Number(opts.pageSize),
-            ...(opts.cursor ? { cursor: opts.cursor } : {}),
-          },
-        },
-      });
-      if (error) die(JSON.stringify(error));
-      if (isJsonMode()) {
-        printResult(data);
-        return;
+    .option("--search <query>", "Search by business name, tax id, or email")
+    .option("--provider-id <id>", "Exact external provider id")
+    .action(
+      async (opts: {
+        pageSize: string;
+        cursor?: string;
+        search?: string;
+        providerId?: string;
+      }) => {
+        const client = createClient();
+        const { data, error } = await client.sales.customers.list({
+          page_size: numberOption(opts.pageSize),
+          cursor: opts.cursor,
+          search: opts.search,
+          provider_id: opts.providerId,
+        });
+        if (error) die(formatApiError(error));
+        if (isJsonMode()) return printResult(data);
+
+        const items = (data?.data ?? []) as CustomerRow[];
+        const rows =
+          items.map((customer) => [
+            customer.id,
+            customer.businessName,
+            customer.taxId,
+            customer.email,
+          ]) ?? [];
+
+        printTable(["ID", "Business name", "Tax ID", "Email"], rows);
+        if (data?.nextCursor) console.log(`\nNext page: --cursor ${data.nextCursor}`);
       }
-      const body = data as unknown as { data?: unknown[]; nextCursor?: string };
-      const items = body.data ?? [];
-      if (!items.length) {
-        console.log("No customers found.");
-        return;
-      }
-      printTable(
-        ["ID", "Name", "CUIT", "Email"],
-        items.map((c: unknown) => {
-          const customer = c as {
-            id?: number;
-            name?: string;
-            cuit?: string;
-            email?: string;
-          };
-          return [customer.id, customer.name, customer.cuit, customer.email];
-        })
-      );
-      if (body.nextCursor) {
-        console.log(`\nNext page: --cursor ${body.nextCursor}`);
-      }
-    });
+    );
 
   cmd
     .command("search <query>")
-    .description("Search customers by name or CUIT")
+    .description("Search customers by business name, tax id, or email")
     .option("--page-size <n>", "Number of results", "20")
     .action(async (query: string, opts: { pageSize: string }) => {
       const client = createClient();
-      const { data, error } = await client.GET("/v1/customers", {
-        params: {
-          query: { search: query, page_size: Number(opts.pageSize) },
-        },
+      const { data, error } = await client.sales.customers.list({
+        search: query,
+        page_size: numberOption(opts.pageSize),
       });
-      if (error) die(JSON.stringify(error));
-      if (isJsonMode()) {
-        printResult(data);
-        return;
-      }
-      const body = data as unknown as { data?: unknown[]; nextCursor?: string };
-      const items = body.data ?? [];
-      if (!items.length) {
-        console.log("No customers found.");
-        return;
-      }
-      printTable(
-        ["ID", "Name", "CUIT", "Email"],
-        items.map((c: unknown) => {
-          const customer = c as {
-            id?: number;
-            name?: string;
-            cuit?: string;
-            email?: string;
-          };
-          return [customer.id, customer.name, customer.cuit, customer.email];
-        })
-      );
+      if (error) die(formatApiError(error));
+      if (isJsonMode()) return printResult(data);
+
+      const items = (data?.data ?? []) as CustomerRow[];
+      const rows =
+        items.map((customer) => [
+          customer.id,
+          customer.businessName,
+          customer.taxId,
+          customer.email,
+        ]) ?? [];
+      printTable(["ID", "Business name", "Tax ID", "Email"], rows);
     });
 
   cmd
@@ -89,12 +86,59 @@ export function buildCustomersCommand(): Command {
     .description("Get a customer by ID")
     .action(async (id: string) => {
       const client = createClient();
-      const { data, error } = await client.GET("/v1/customers/{id}", {
-        params: { path: { id: Number(id) } },
-      });
-      if (error) die(JSON.stringify(error));
+      const { data, error } = await client.sales.customers.get(Number(id));
+      if (error) die(formatApiError(error));
       printResult(data);
     });
+
+  cmd
+    .command("create")
+    .description("Create a customer")
+    .option("--business-name <name>", "Legal/business name")
+    .option("--tax-id <value>", "CUIT/CUIL/DNI")
+    .option("--tax-category-id <id>", "Tax category id")
+    .option("--document-type-id <id>", "Document type id")
+    .option("--email <email>", "Email")
+    .option("--phone <phone>", "Phone")
+    .option("--address <address>", "Address")
+    .option("--city <city>", "City")
+    .option("--postal-code <postalCode>", "Postal code")
+    .option("--provider-id <id>", "External provider id")
+    .action(
+      async (opts: {
+        businessName?: string;
+        taxId?: string;
+        taxCategoryId?: string;
+        documentTypeId?: string;
+        email?: string;
+        phone?: string;
+        address?: string;
+        city?: string;
+        postalCode?: string;
+        providerId?: string;
+      }) => {
+        if (!opts.businessName && !opts.taxId) {
+          die("customers create requires --business-name or --tax-id");
+        }
+
+        const client = createClient();
+        const { data, error } = await client.sales.customers.create({
+          businessName: opts.businessName,
+          taxId: opts.taxId,
+          taxCategoryId: numberOption(opts.taxCategoryId),
+          documentTypeId: numberOption(opts.documentTypeId),
+          email: opts.email,
+          phone: opts.phone,
+          address: opts.address,
+          city: opts.city,
+          postalCode: opts.postalCode,
+          providerId: opts.providerId,
+          isActive: true,
+        });
+        if (error) die(formatApiError(error));
+        printResult(data);
+      }
+    );
 
   return cmd;
 }

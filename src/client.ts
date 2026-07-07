@@ -1,17 +1,23 @@
-import { PeaklyClient } from "@peakly/sdk";
-import { readConfig } from "./config.js";
+import { PeaklyClient } from "peakly";
+import { resolveConfig } from "./config.js";
 
 export function createClient(): PeaklyClient {
-  const config = readConfig();
-  const apiKey = process.env.PEAKLY_API_KEY ?? config?.apiKey;
-  const baseUrl = process.env.PEAKLY_API_URL ?? config?.baseUrl;
+  const config = resolveConfig();
 
-  if (!apiKey) {
-    console.error(
-      "Error: not authenticated. Run: peakly auth --api-key <key>"
+  if (!config.apiKey) {
+    throw new Error(
+      "Missing API key. Set PEAKLY_API_KEY or pass --api-key <key>."
     );
-    process.exit(1);
   }
 
-  return new PeaklyClient(apiKey, baseUrl ? { baseUrl } : undefined);
+  if (config.debug) {
+    console.error(
+      `[peakly] baseUrl=${config.baseUrl} apiKeySource=${config.apiKeySource}`
+    );
+  }
+
+  return new PeaklyClient({
+    apiKey: config.apiKey,
+    baseUrl: config.baseUrl,
+  });
 }
